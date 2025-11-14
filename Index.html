@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Cotador Fácil Hapvida - EVN</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <style>
+    body{padding:18px;background:#f4f7fb;font-family:Inter,Arial;}
+    .card{border-radius:12px;}
+    .badge-promo{background:#fff3cd;color:#8a5c00;padding:6px;border-radius:6px;font-weight:700}
+    pre{white-space:pre-wrap;}
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3>Cotador Fácil Hapvida — EVN Tecnologia</h3>
+    <div><small>Consultora: <strong>Edvânia Barbosa</strong> • 85 98777-3414</small></div>
+  </div>
+
+  <div class="card p-3 mb-3">
+    <h5>1) Upload dos arquivos (PDF / imagem)</h5>
+    <div class="row g-2">
+      <div class="col-md-6">
+        <label class="form-label">Arquivo (PDF ou imagem)</label>
+        <input id="fileInput" type="file" class="form-control"/>
+      </div>
+      <div class="col-md-6 d-flex align-items-end">
+        <button id="btnUpload" class="btn btn-primary">📤 Enviar e extrair (OCR)</button>
+      </div>
+    </div>
+    <div class="mt-2">
+      <small class="text-muted">O arquivo será enviado ao seu Drive (OCR será executado) e o texto retornado para processamento.</small>
+    </div>
+    <div class="mt-2">
+      <pre id="txtPreview" style="height:140px;overflow:auto;background:#fafafa;padding:10px;border-radius:6px;"></pre>
+    </div>
+  </div>
+
+  <div class="card p-3 mb-3">
+    <h5>2) Revisar / Parsear tabela</h5>
+    <div class="mb-2">
+      <button id="btnParse" class="btn btn-outline-secondary">🔎 Tentar parse automático</button>
+      <button id="btnUseExample" class="btn btn-outline-info">Exemplo rápido</button>
+    </div>
+    <div class="row g-2">
+      <div class="col-md-6">
+        <label>Tabela PF / PME (texto extraído)</label>
+        <textarea id="textArea" class="form-control" rows="8"></textarea>
+      </div>
+      <div class="col-md-6">
+        <label>Resultado do parser (linhas detectadas)</label>
+        <div id="parseResult" style="height:220px; overflow:auto; background:#fff; padding:8px; border-radius:6px;"></div>
+      </div>
+    </div>
+    <div class="mt-2 small text-muted">Corrija manualmente se necessário.</div>
+  </div>
+
+  <div class="card p-3 mb-3">
+    <h5>3) Gerar cotações (até 6)</h5>
+    <div id="quotesArea"></div>
+    <div class="mt-2 d-flex gap-2">
+      <button id="btnAddQuote" class="btn btn-outline-primary">➕ Adicionar Cotação</button>
+      <button id="btnCalcAll" class="btn btn-success">🔢 Calcular todas</button>
+      <button id="btnGeneratePdf" class="btn btn-warning">🖨️ Gerar PDF</button>
+      <button id="btnSendEmail" class="btn btn-outline-secondary">✉️ Enviar por Email</button>
+    </div>
+    <div class="mt-2 small text-muted">Para cada cotação você pode colocar idades (ex: 34,3,6) ou valor por vida + número de vidas.</div>
+  </div>
+
+  <div id="resultArea" class="card p-3" style="display:none;">
+    <h5>Resultado</h5>
+    <div id="pdfLink"></div>
+    <div id="whatsPreview" style="white-space:pre-wrap;margin-top:8px;"></div>
+  </div>
+</div>
+
+<script>
+const WEBAPP_URL = 'YOUR_SCRIPT_WEBAPP_URL'; // <<<<<<<< substitua pela URL do Apps Script web app
+
+function readFileAsBase64(file){
+  return new Promise((res, rej) => {
+    const reader = new FileReader();
+    reader.onload = ()=> {
+      const b64 = reader.result.split(',')[1];
+      res(b64);
+    };
+    reader.onerror = rej;
+    reader.readAsDataURL(file);
+  });
+}
+
+document.getElementById('btnUpload').onclick = async ()=>{
+  const f = document.getElementById('fileInput').files[0];
+  if(!f) return alert('Escolha um arquivo');
+  document.getElementById('txtPreview').innerText = 'Enviando e processando...';
+  const base64 = await readFileAsBase64(f);
+  const payload = { action:'uploadBase64', filename: f.name, mimeType: f.type, base64: base64 };
+  const resp = await fetch(WEBAPP_URL, { method:'POST', body: JSON.stringify(payload) });
+  const j = await resp.json();
+  if(!j.success) return alert('Erro: ' + j.error);
+  const txt = j.data.text || '';
+  document.getElementById('txtPreview').innerText = txt || '(OCR não retornou texto)';
+  document.getElementById('textArea').value = txt || '';
+};
+
+document.getElementById('btnParse').onclick = async ()=>{
+  const txt = document.getElementById('textArea').value;
+  if(!txt) return alert('Cole ou extraia o texto primeiro');
+  const payload = { action:'parseText', text: txt };
+  const resp = await fetch(WEBAPP_URL, { method:'POST', body: JSON.stringify(payload) });
+  const j = await resp.json();
+  if(!j.success) return alert('Erro: ' + j.error);
+  const parsed = j.data.parsed || [];
+  const container = document.getElementById('parseResult');
+  container.innerHTML = '';
+  parsed.forEach((row, idx) => {
+    const el = document.createElement('div');
+    el.style.padding = '6px';
+    el.style.borderBottom = '1px solid #eee';
+    el.innerHTML = `<strong>L${idx+1}:</strong> ${row.raw}<br/><small>valores: ${row.values.map(v=>v.toFixed(2)).join(' | ')}</small>`;
+    container.appendChild(el);
+  });
+};
+
+document.getElementById('btnUseExample').onclick = ()=>{
+  const ex = `Mix ... R$ 568,19  R$ 742,17  R$ 849,82  R$ 948,86  R$ 995,08  R$ 1121,26  R$ 1362,55
+Nosso Plano - Apartamento R$ 277,51  R$ 358,47  R$ 408,57  R$ 454,66  R$ 476,17  R$ 534,89  R$ 647,18`;
+  document.getElementById('textArea').value = ex;
+  document.getElementById('btnParse').click();
+};
+
+// quotes UI
+const quotes = [];
+function renderQuotes(){
+  const area = document.getElementById('quotesArea');
+  area.innerHTML = '';
+  quotes.forEach((q, idx) => {
+    const div = document.createElement('div');
+    div.className = 'p-2 mb-2';
+    div.style.border = '1px solid #eaeaea';
+    div.innerHTML = `
+      <div class="d-flex justify-content-between"><strong>Cotação ${idx+1}</strong>
+        <div><button data-idx="${idx}" class="btn-remove btn btn-sm btn-danger">Remover</button></div>
+      </div>
+      <div class="row g-2 mt-2">
+        <div class="col-md-4"><input class="form-control planName" placeholder="Nome do plano" value="${q.planName||'Nosso Plano'}"/></div>
+        <div class="col-md-2"><select class="form-select type"><option>PF</option><option>PME 2-29</option><option>PME 30-99</option></select></div>
+        <div class="col-md-2"><input class="form-control acomod" placeholder="Acomodação" value="${q.acomod||'Apartamento'}"/></div>
+        <div class="col-md-4"><input class="form-control ages" placeholder="Idades (ex: 34,3,6) ou vazio"/></div>
+        <div class="col-md-3 mt-2"><input class="form-control valorVida" placeholder="Valor por vida (R$)"/></div>
+        <div class="col-md-3 mt-2"><input class="form-control vidas" type="number" min="1" value="1"/></div>
+        <div class="col-md-3 mt-2"><select class="form-select copart"><option>sem</option><option>parcial</option><option>com</option></select></div>
+        <div class="col-md-3 mt-2"><select class="form-select odonto"><option>Não</option><option>Sim</option></select></div>
+      </div>
+      <div class="mt-2"><button data-idx="${idx}" class="btnCalc btn btn-sm btn-primary">Calcular</button> <span class="result" style="margin-left:8px"></span></div>
+    `;
+    area.appendChild(div);
+
+    div.querySelector('.btn-remove').onclick = (ev) => {
+      quotes.splice(idx,1); renderQuotes();
+    };
+    div.querySelector('.btnCalc').onclick = async (ev) => {
+      // read values from inputs and compute using the parsed table from parseResult
+      const planName = div.querySelector('.planName').value;
+      const type = div.querySelector('.type').value;
+      const acomod = div.querySelector('.acomod').value;
+      const agesStr = div.querySelector('.ages').value.trim();
+      const valorVida = parseFloat(div.querySelector('.valorVida').value.replace(',', '.')||0);
+      const vidas = parseInt(div.querySelector('.vidas').value||1);
+      const copart = div.querySelector('.copart').value;
+      let subtotal = 0;
+      if(agesStr){
+        const ages = agesStr.split(',').map(s=>parseInt(s.trim())).filter(Boolean);
+        // Heuristic mapping:
+        // Get parsed lines from parseResult container (first row's values used as first plan row)
+        const parsedElements = document.getElementById('parseResult').children;
+        if(parsedElements.length === 0){
+          alert('Nenhuma tabela detectada. Cole o texto e clique em "Tentar parse automático".');
+          return;
+        }
+        // Choose first parsed line as reference
+        const first = parsedElements[0].querySelector('small').innerText;
+        // But better: ask backend to parse text again and send structured values -> for simplicity, we'll use a direct approach:
+        const parsedJson = [];
+        for(let i=0;i<parsedElements.length;i++){
+          const valsText = parsedElements[i].querySelector('small').innerText.replace('valores: ','');
+          const arr = valsText.split('|').map(s=>parseFloat(s.trim())).filter(n=>!isNaN(n));
+          parsedJson.push(arr);
+        }
+        // now find best row length mapping
+        // We'll assume the first row matches faixa sequence; map ages to index by typical Hapvida faixas:
+        const defaultFaixas = [ '00-18','19-23','24-28','29-33','34-38','39-43','44-48','49-53','54-58','59+' ];
+        // pick row with length >= defaultFaixas length or nearest
+        let chosenRow = parsedJson[0] || [];
+        for(const r of parsedJson) if(r.length >= defaultFaixas.length){ chosenRow = r; break; }
+        // map age -> index by those default faixas
+        ages.forEach(age=>{
+          let idx = 0;
+          if(age <= 18) idx = 0;
+          else if(age <= 23) idx = 1;
+          else if(age <= 28) idx = 2;
+          else if(age <= 33) idx = 3;
+          else if(age <= 38) idx = 4;
+          else if(age <= 43) idx = 5;
+          else if(age <= 48) idx = 6;
+          else if(age <= 53) idx = 7;
+          else if(age <= 58) idx = 8;
+          else idx = Math.min(chosenRow.length-1, 9);
+          const val = chosenRow[idx] || 0;
+          subtotal += val;
+        });
+      } else if(valorVida>0){
+        subtotal = valorVida * vidas;
+      } else {
+        subtotal = 0;
+      }
+      const descontoPF = (type==='PF' && (vidas>=2)) ? subtotal*0.05 : 0;
+      const taxa = 35.00; // default taxa, you may expose field to edit
+      const promo15 = subtotal * 0.15 * 3;
+      const totalAfterPF = subtotal - descontoPF;
+      const totalFinal = totalAfterPF + taxa;
+      div.querySelector('.result').innerHTML = `<strong>Total:</strong> R$ ${totalFinal.toFixed(2)}  <small class="text-muted">Economia 3m: R$ ${promo15.toFixed(2)}</small>`;
+      quotes[idx].result = { subtotal, descontoPF, taxa, promo15, totalFinal, planName, type, acomod, vidas, copart };
+    };
+  });
+}
+
+document.getElementById('btnAddQuote').onclick = ()=> {
+  if(quotes.length >= 6) return alert('Máximo 6 cotações');
+  quotes.push({});
+  renderQuotes();
+};
+
+document.getElementById('btnCalcAll').onclick = ()=> {
+  // just trigger calc button for each
+  document.querySelectorAll('.btnCalc').forEach(b=>b.click());
+};
+
+document.getElementById('btnGeneratePdf').onclick = async ()=> {
+  const valid = quotes.filter(q=>q.result);
+  if(valid.length===0) return alert('Nenhuma cotação calculada.');
+  const clientName = prompt('Nome do cliente:') || 'Cliente';
+  const payload = { action:'generatePdf', clientName: clientName, quotes: valid.map(q=>q.result), meta: { redeSnippet: document.getElementById('txtPreview').innerText.substring(0,1000) } };
+  const resp = await fetch(WEBAPP_URL, { method:'POST', body: JSON.stringify(payload) });
+  const j = await resp.json();
+  if(!j.success) return alert('Erro: ' + j.error);
+  const driveUrl = j.data.driveFileUrl;
+  document.getElementById('resultArea').style.display = 'block';
+  document.getElementById('pdfLink').innerHTML = `<a href="${driveUrl}" target="_blank">Abrir PDF gerado no Drive</a>`;
+  // show WhatsApp summary
+  let whats = `📋 Cotador Fácil Hapvida - EVN Tecnologia\n👤 Cliente: ${clientName}\n👩‍💼 Consultora: Edvânia Barbosa Nascimento • 85 98777-3414\n\n`;
+  valid.forEach((q, i)=>{
+    whats += `✳️ COTAÇÃO ${i+1}\n🏷 Plano: ${q.result.planName}\n👥 Vidas: ${q.result.vidas}\n💰 Total estimado: R$ ${q.result.totalFinal.toFixed(2)}\n🎁 Promoção: 15% nas 3 primeiras mensalidades\n⚡ Carência Zero: consultas e exames simples\n\n`;
+  });
+  document.getElementById('whatsPreview').innerText = whats;
+  // also copy to clipboard
+  navigator.clipboard?.writeText(whats).catch(()=>{});
+};
+
+document.getElementById('btnSendEmail').onclick = async ()=>{
+  const to = prompt('Enviar para (email):');
+  if(!to) return;
+  // fetch last generated pdf base64? Simpler: generate new PDF and send as attachment
+  const valid = quotes.filter(q=>q.result);
+  if(valid.length===0) return alert('Nenhuma cotação calculada.');
+  const clientName = prompt('Nome do cliente para o email:') || 'Cliente';
+  const payload = { action:'generatePdf', clientName: clientName, quotes: valid.map(q=>q.result), meta: { redeSnippet: document.getElementById('txtPreview').innerText.substring(0,1000) } };
+  const resp = await fetch(WEBAPP_URL, { method:'POST', body: JSON.stringify(payload) });
+  const j = await resp.json();
+  if(!j.success) return alert('Erro ao gerar PDF: ' + j.error);
+  // send email with pdfBase64
+  const sendPayload = { action:'sendEmail', to: to, subject: 'Sua cotação Hapvida', body: 'Segue anexo a cotação Hapvida.', pdfBase64: j.data.pdfBase64, filename: 'cotacao.pdf' };
+  const sresp = await fetch(WEBAPP_URL, { method:'POST', body: JSON.stringify(sendPayload) });
+  const sj = await sresp.json();
+  if(!sj.success) return alert('Erro ao enviar email: ' + sj.error);
+  alert('Email enviado com sucesso!');
+};
+
+// initial
+renderQuotes();
+</script>
+</body>
+</html>
